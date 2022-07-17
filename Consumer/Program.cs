@@ -9,27 +9,37 @@ var config = new ConsumerConfig()
   PartitionAssignmentStrategy = PartitionAssignmentStrategy.CooperativeSticky,
 };
 
-using var consumer = new ConsumerBuilder<string, string>(config).Build();
+var threads = Environment.ProcessorCount;
 
-consumer.Subscribe("test");
-
-while (true)
+if (threads < 1)
 {
-  var result = consumer.Consume(TimeSpan.FromMilliseconds(100));
-
-  if (result == null)
-  {
-    continue;
-  }
-
-  try
-  {
-    Console.WriteLine($"Consumed: partition {result.Partition.Value}, offset {result.Offset.Value}");
-
-    consumer.StoreOffset(result);
-  }
-  catch (KafkaException ex) when (!ex.Error.IsFatal)
-  {
-    Console.WriteLine("Non-fatal exception: {ex}");
-  }
+  threads = 1;
 }
+
+Parallel.ForEach(new byte[threads], _ =>
+{
+  using var consumer = new ConsumerBuilder<string, string>(config).Build();
+
+  consumer.Subscribe("test");
+
+  while (true)
+  {
+    var result = consumer.Consume(TimeSpan.FromMilliseconds(100));
+
+    if (result == null)
+    {
+      continue;
+    }
+
+    try
+    {
+      Console.WriteLine($"Consumed: partition {result.Partition.Value}, offset {result.Offset.Value}");
+
+      consumer.StoreOffset(result);
+    }
+    catch (KafkaException ex) when (!ex.Error.IsFatal)
+    {
+      Console.WriteLine($"Non-fatal exception: partition {result.Partition.Value}, offset {result.Offset.Value}, {ex}");
+    }
+  }
+});
