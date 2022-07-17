@@ -14,14 +14,16 @@ var tasks = new List<Task>();
 
 var builder = new StringBuilder();
 
-foreach (var _ in Enumerable.Range(0, 20_000))
+foreach (var _ in Enumerable.Range(0, 10_000))
 {
-  builder.Append("this is a test value");
+  builder.Append("_10B_");
 }
 
 var value = builder.ToString();
 
-var init = Enumerable.Range(0, 100_000).ToDictionary(x => x.ToString(), x => 1);
+var count = 10_000;
+
+var init = Enumerable.Range(0, count).ToDictionary(x => x.ToString(), _ => 1);
 
 var queue = new ConcurrentDictionary<string, int>(init);
 
