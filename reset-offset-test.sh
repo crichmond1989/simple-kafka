@@ -1,0 +1,1 @@
+kafka-consumer-groups --bootstrap-server localhost:9092 --group crichmond --topic test --reset-offsets --to-earliest --execute

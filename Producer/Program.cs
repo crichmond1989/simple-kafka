@@ -6,7 +6,8 @@ using Service;
 
 var config = new ProducerConfig()
 {
-  BootstrapServers = "localhost:9092"
+  BootstrapServers = "localhost:9092",
+  CompressionType = CompressionType.Gzip,
 };
 
 using var producer = new ProducerBuilder<string, string>(config).Build();
@@ -17,7 +18,7 @@ var builder = new StringBuilder();
 
 foreach (var _ in Enumerable.Range(0, 10_000))
 {
-  builder.Append("_10B_");
+  builder.Append("_10_BYTES_");
 }
 
 var value = builder.ToString();
