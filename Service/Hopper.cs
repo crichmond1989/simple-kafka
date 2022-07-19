@@ -78,7 +78,7 @@ public class Hopper
     {
       // NOTE: This is the most effective backoff strategy. There's no need to add more items to
       //       the queue if the queue is full.
-      while (_lastDelivery < _lastRejection)
+      while (_lastDelivery < _lastRejection && DateTime.UtcNow.AddSeconds(-10).Ticks < _lastRejection)
       {
         // NOTE: While we're waiting for the queue to empty, we may as well put priority on
         //       processing delivery reports.
@@ -113,13 +113,9 @@ public class Hopper
     IsActive = false;
   }
 
-  private void SleepThenRetry(string key, Message<string, string> message, Action<string> onDelivered, int attempt, Error error)
+  private void Retry(string key, Message<string, string> message, Action<string> onDelivered, int attempt, Error error)
   {
     Console.WriteLine($"Failed: {key}, attempt {attempt}, {error}");
-
-    // NOTE: This Sleep made more sense before the _lastDelivered/_lastRejected logic.
-    //       It might be superfluous now. I'll experiment with removing it.
-    Thread.Sleep((attempt ^ 2) * 100);
 
     this.Stage(key, message, onDelivered, attempt + 1);
   }
@@ -146,11 +142,7 @@ public class Hopper
         }
         else
         {
-          // NOTE: SleepThenRetry is run in its own Task to avoid Sleeping an important thread.
-          //       This Task will be removed if I remove the Sleep.
-          //       BTW, I've never seen the flow hit this part of the code. Queue full
-          //       exceptions are thrown on _producer.Produce instead of here.
-          Task.Run(() => this.SleepThenRetry(key, message, onDelivered, attempt, x.Error));
+          this.Retry(key, message, onDelivered, attempt, x.Error);
         }
       });
 
@@ -160,7 +152,7 @@ public class Hopper
     {
       _lastRejection = DateTime.UtcNow.Ticks;
 
-      Task.Run(() => this.SleepThenRetry(key, message, onDelivered, attempt, ex.Error));
+      this.Retry(key, message, onDelivered, attempt, ex.Error);
     }
   }
 }
