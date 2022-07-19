@@ -2,13 +2,14 @@
 using Confluent.Kafka;
 using Service;
 
-var fromTopic = "test.pipe";
+var fromTopic = "test";
 var toTopic = "test.pipe.v2";
 
 var config = new ConsumerConfig()
 {
   AutoOffsetReset = AutoOffsetReset.Earliest,
   BootstrapServers = "localhost:9092",
+  ClientId = "Pipe",
   EnableAutoOffsetStore = false,
   GroupId = "crichmond",
   PartitionAssignmentStrategy = PartitionAssignmentStrategy.CooperativeSticky,

@@ -4,6 +4,7 @@ var config = new ConsumerConfig()
 {
   AutoOffsetReset = AutoOffsetReset.Earliest,
   BootstrapServers = "localhost:9092",
+  ClientId = "Consumer",
   EnableAutoOffsetStore = false,
   GroupId = "crichmond",
   PartitionAssignmentStrategy = PartitionAssignmentStrategy.CooperativeSticky,
