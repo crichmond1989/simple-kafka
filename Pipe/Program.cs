@@ -56,6 +56,11 @@ Parallel.ForEach(new byte[threads], _ =>
       .TakeWhile(x => x.Value == 1)
       .ToArray();
 
+    if (!ready.Any())
+    {
+      return;
+    }
+
     foreach (var item in ready)
     {
       offsetTracker.TryRemove(item);
@@ -63,13 +68,10 @@ Parallel.ForEach(new byte[threads], _ =>
 
     var last = ready.Last();
 
-    if (last.Value == 0)
-    {
-      return;
-    }
-
     // NOTE: Commit refers to the message that should be read next
     var commitPos = new TopicPartitionOffset(last.Key.TopicPartition, last.Key.Offset + 1);
+
+    Console.WriteLine($"Stored: {commitPos}");
 
     consumer.StoreOffset(commitPos);
   }
@@ -112,7 +114,7 @@ Parallel.ForEach(new byte[threads], _ =>
     }
     catch (KafkaException ex) when (!ex.Error.IsFatal)
     {
-      Console.WriteLine($"Non-fatal exception: partition {result.Partition.Value}, offset {result.Offset.Value}, {ex}");
+      Console.WriteLine($"Non-fatal exception: {pos}, {ex}");
     }
   }
 });

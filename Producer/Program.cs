@@ -1,6 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Collections.Immutable;
-using System.Text;
+﻿using System.Text;
 using Confluent.Kafka;
 using Service;
 
@@ -30,13 +28,22 @@ var count = 10_000;
 
 var hopper = new Hopper(producer, "test");
 
-Enumerable.Range(0, count).AsParallel().ForAll(x => hopper.Stage(x.ToString(), value, y => Console.WriteLine($"Delivered: {y}")));
+Enumerable.Range(0, count).AsParallel().ForAll(x => hopper.Stage(
+  x.ToString(),
+  new Message<string, string>()
+  {
+    Key = x.ToString(),
+    Value = value,
+  },
+  y => Console.WriteLine($"Delivered: {y}")
+));
 
 Task.Run(() => hopper.Activate());
 
-while (hopper.Size > 0)
+while (hopper.PendingCount + hopper.StagedCount > 0)
 {
-  Console.WriteLine($"Remaining: {hopper.Size}");
+  Console.WriteLine($"Remaining Pending: {hopper.PendingCount}");
+  Console.WriteLine($"Remaining Staged: {hopper.StagedCount}");
 
   Thread.Sleep(5_000);
 }

@@ -7,17 +7,27 @@ public class Hopper
 {
   private readonly IProducer<string, string> _producer;
 
-  private readonly ConcurrentDictionary<string, Action<string>> _onDelivered = new ConcurrentDictionary<string, Action<string>>();
+  private readonly ConcurrentDictionary<string, Action<string>> _onDelivered = new();
 
-  private readonly ConcurrentDictionary<string, Message<string, string>> _messages = new ConcurrentDictionary<string, Message<string, string>>();
+  private readonly ConcurrentDictionary<string, Message<string, string>> _messages = new();
 
-  private readonly ConcurrentDictionary<string, int> _staged = new ConcurrentDictionary<string, int>();
+  private readonly ConcurrentDictionary<int, ConcurrentQueue<string>> _priorityQueue = new();
 
-  public string Topic { get; private init; }
+  private int _pendingCount;
+
+  private int _stagedCount;
+
+  private long _lastDelivery;
+
+  private long _lastRejection;
 
   public bool IsActive { get; private set; }
 
-  public int Size => _staged.Count;
+  public string Topic { get; private init; }
+
+  public int PendingCount => _pendingCount;
+
+  public int StagedCount => _stagedCount;
 
   public Hopper(
     IProducer<string, string> producer,
@@ -29,17 +39,25 @@ public class Hopper
     Topic = topic;
   }
 
-  public void Stage(string contextKey, Message<string, string> message, Action<string> onDelivered, int attempt = 1)
+  public void Stage(string key, Message<string, string> message, Action<string> onDelivered, int attempt = 1)
   {
-    _onDelivered.TryAdd(contextKey, onDelivered);
-    _messages.AddOrUpdate(contextKey, _ => message, (_, _) => message);
-    _staged.AddOrUpdate(contextKey, _ => attempt, (_, _) => attempt);
+    Console.WriteLine($"Staged: {key}");
+
+    Interlocked.Increment(ref _stagedCount);
+
+    var queue = _priorityQueue.GetOrAdd(attempt, _ => new ConcurrentQueue<string>());
+
+    _onDelivered.TryAdd(key, onDelivered);
+    _messages.TryAdd(key, message);
+
+    queue.Enqueue(key);
   }
 
   public void Activate()
   {
     if (IsActive)
     {
+      // NOTE: Already active, no need to spin up another loop
       return;
     }
 
@@ -47,16 +65,20 @@ public class Hopper
 
     while (IsActive)
     {
-      var item = _staged.OrderByDescending(x => x.Value).FirstOrDefault();
+      while (_lastDelivery < _lastRejection)
+      {
+        _producer.Poll(TimeSpan.FromMilliseconds(100));
+      }
+
+      var (attempt, queue) = _priorityQueue.OrderByDescending(x => x.Key).FirstOrDefault(x => x.Value.Count > 0);
 
       if (
-        item.Key != null &&
-        _onDelivered.TryRemove(item.Key, out var onDelivered) &&
-        _messages.TryRemove(item.Key, out var message) &&
-        _staged.TryRemove(item.Key, out var attempt)
+        queue?.TryDequeue(out var key) == true &&
+        _onDelivered.TryRemove(key, out var onDelivered) &&
+        _messages.TryRemove(key, out var message)
       )
       {
-        Process(item.Key, message, onDelivered, attempt);
+        Process(key, message, onDelivered, attempt);
       }
       else
       {
@@ -81,25 +103,37 @@ public class Hopper
 
   private void Process(string key, Message<string, string> message, Action<string> onDelivered, int attempt)
   {
+    Interlocked.Decrement(ref _stagedCount);
+
     try
     {
-      Console.WriteLine($"Producing {key}, attempt {attempt}");
+      Console.WriteLine($"Producing: {key}, attempt {attempt}");
 
       _producer.Produce(Topic, message, x =>
       {
+        Interlocked.Decrement(ref _pendingCount);
+
         if (x.Error.Code == ErrorCode.NoError)
         {
+          Console.WriteLine($"Delivered: {key}");
+
+          _lastDelivery = DateTime.UtcNow.Ticks;
+
           onDelivered(key);
         }
         else
         {
-          this.SleepThenRetry(key, message, onDelivered, attempt, x.Error);
+          Task.Run(() => this.SleepThenRetry(key, message, onDelivered, attempt, x.Error));
         }
       });
+
+      Interlocked.Increment(ref _pendingCount);
     }
     catch (KafkaException ex) when (!ex.Error.IsFatal)
     {
-      this.SleepThenRetry(key, message, onDelivered, attempt, ex.Error);
+      _lastRejection = DateTime.UtcNow.Ticks;
+
+      Task.Run(() => this.SleepThenRetry(key, message, onDelivered, attempt, ex.Error));
     }
   }
 }
